@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "title": "How Blockchains Reach Consensus",
+    "description": "A short course on why decentralized networks agree on one shared truth without a central authority.",
+    "content": "A blockchain is a shared ledger copied across many independent computers, called nodes. The hard problem it solves is consensus: how do thousands of nodes that don't trust each other agree on the exact same order of transactions, with no single party in charge? Proof of Work solves this by making nodes compete to solve a computationally expensive puzzle; whoever solves it first proposes the next block, and the cost of the puzzle makes it expensive to cheat. Proof of Stake solves it differently: instead of burning electricity, validators lock up (stake) their own tokens as collateral, and lose that stake if they try to approve fraudulent blocks. Once a block is added and enough later blocks are built on top of it, rewriting history would require redoing all that work or stake, which becomes practically impossible. This is why blockchains are described as immutable. Layer 1 chains like Ethereum or 0G handle this consensus directly; Layer 2s and modular chains instead split jobs like execution, data availability, and storage across specialized networks to scale further, which is the design 0G itself uses by separating its Chain, Storage, and Compute layers."
+  },
+  {
+    "id": 2,
+    "title": "Special Relativity in Plain Language",
+    "description": "The two ideas behind Einstein's special relativity, explained without the equations.",
+    "content": "Special relativity rests on two simple postulates. First: the laws of physics are the same for every observer moving at a constant speed, there's no special 'rest frame' for the universe. Second, and the strange one: the speed of light in a vacuum is the same for every observer, no matter how fast they themselves are moving. That second postulate breaks our intuition. If you're on a train moving at half the speed of light and you shine a flashlight forward, common sense says the light should travel at light-speed plus your train's speed. Experiments show it doesn't, light still measures as moving at exactly the same speed for you and for someone standing still on the platform. The only way both postulates can be true at once is if time and space themselves stretch to compensate. Someone moving relative to you experiences time more slowly (time dilation) and measures lengths in the direction of motion as shorter (length contraction), from your point of view. Neither observer feels 'wrong', each is correct in their own reference frame. This isn't just theory: GPS satellites have to correct for relativistic time dilation every day, or your phone's location would drift by kilometers."
+  }
+]

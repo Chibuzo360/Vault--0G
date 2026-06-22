@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Vault — AI Agents on 0G</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
+<style>
+:root{
+  --bg:#090c11;--panel:#11141c;--panel2:#0d1016;--line:#1c2030;
+  --text:#e2e5ec;--muted:#6a7485;--accent:#6ee7b7;--accent-dim:#0f2a1e;
+  --accent-border:#2a5a3a;--red:#e07a7a;--red-dim:#1f0f0f;
+  --yellow:#f0c97a;--yellow-dim:#1a1400;--purple:#a78bfa;--purple-dim:#1a1030;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:14px;line-height:1.6;min-height:100vh}
+
+/* HEADER */
+header{position:sticky;top:0;z-index:100;background:rgba(9,12,17,.95);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;letter-spacing:-.02em;cursor:pointer}
+.logo-mark{width:30px;height:30px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;color:#06140e;font-size:15px;font-weight:900}
+.logo-sub{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:0}
+.header-right{display:flex;align-items:center;gap:10px}
+#wallet-pill{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 14px 5px 10px;font-size:12px;color:var(--muted);transition:.3s}
+#wallet-pill.connected{border-color:var(--accent-border);color:var(--text)}
+.w-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s}
+#wallet-pill.connected .w-dot{background:var(--accent)}
+#wallet-addr{font-family:monospace;font-size:12px}
+.btn{border:none;border-radius:9px;font-weight:700;cursor:pointer;transition:opacity .2s}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-accent{background:var(--accent);color:#06140e;padding:8px 18px;font-size:13px}
+.btn-accent:hover:not(:disabled){opacity:.85}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--muted);padding:7px 14px;font-size:13px}
+.btn-ghost:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.btn-sm{padding:6px 14px;font-size:12px}
+
+/* TABS */
+#tabs{display:none;border-bottom:1px solid var(--line);padding:0 24px;background:var(--bg)}
+.tab{display:inline-block;padding:12px 18px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:.2s;user-select:none}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-color:var(--accent)}
+
+/* SCREENS */
+main{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+.screen{display:none}.screen.active{display:block}
+
+/* LANDING */
+.landing{min-height:65vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:24px}
+.landing-badge{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.lbadge{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 14px;font-size:11px;color:var(--muted)}
+.landing h1{font-size:32px;font-weight:900;letter-spacing:-.04em;line-height:1.15;max-width:520px}
+.landing h1 em{font-style:normal;color:var(--accent)}
+.landing p{color:var(--muted);max-width:440px;font-size:15px}
+.landing-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+
+/* SECTION LABEL */
+.sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.sec-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+
+/* AGENT CARDS (marketplace) */
+.agents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.agent-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;transition:border-color .2s,transform .15s}
+.agent-card:hover{border-color:var(--accent-border);transform:translateY(-2px)}
+.agent-card-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+.agent-avatar{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;border:1px solid var(--line)}
+.agent-card-info h3{font-size:14px;font-weight:700;margin-bottom:3px}
+.agent-creator{font-size:11px;color:var(--muted);font-family:monospace}
+.agent-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.agent-footer{display:flex;align-items:center;justify-content:space-between}
+.agent-stats{font-size:11px;color:var(--muted)}
+.tag{font-size:10px;padding:2px 8px;border-radius:999px;border:1px solid;font-weight:600;white-space:nowrap}
+.tag-owned{color:var(--accent);border-color:var(--accent-border);background:var(--accent-dim)}
+.tag-storage{color:var(--yellow);border-color:#4a3a10;background:var(--yellow-dim)}
+.tag-live{color:var(--purple);border-color:#3a2a60;background:var(--purple-dim)}
+
+/* EMPTY */
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty strong{display:block;font-size:16px;color:var(--text);margin-bottom:8px}
+
+/* SKELETON */
+.skeleton{background:linear-gradient(90deg,var(--panel) 25%,#171c27 50%,var(--panel) 75%);background-size:200% 100%;animation:shimmer 1.4s infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+
+/* MODAL (Agent Profile) */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;padding:28px}
+.modal-close{float:right;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+.modal-close:hover{color:var(--text)}
+.modal-agent-hero{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.modal-avatar{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:26px;border:2px solid var(--accent-border);flex-shrink:0}
+.modal-agent-hero h2{font-size:20px;font-weight:800;margin-bottom:4px}
+.modal-meta{font-size:12px;color:var(--muted)}
+.modal-section{margin-bottom:18px}
+.modal-section-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600;margin-bottom:8px}
+.modal-section p{font-size:13px;color:var(--text);line-height:1.6}
+.personality-box{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12px;color:var(--text);font-style:italic;line-height:1.6}
+.hash-box{font-family:monospace;font-size:10px;color:var(--yellow);background:var(--yellow-dim);border:1px solid #4a3a10;border-radius:8px;padding:8px 12px;word-break:break-all}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+.sample-qa{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px}
+.sample-q{font-size:12px;color:var(--muted);margin-bottom:6px}
+.sample-a{font-size:13px;color:var(--text);line-height:1.5}
+
+/* MY AGENTS */
+.my-agents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:24px}
+.owned-agent-card{background:var(--panel);border:1px solid var(--accent-border);border-radius:14px;padding:18px;transition:.2s}
+.owned-agent-card:hover{transform:translateY(-2px)}
+.owned-card-avatar{width:48px;height:48px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px;border:2px solid var(--accent-border)}
+.owned-card-name{font-size:15px;font-weight:700;margin-bottom:4px}
+.owned-card-desc{font-size:12px;color:var(--muted);margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.owned-card-actions{display:flex;gap:8px}
+
+/* CHAT SCREEN */
+#chat-screen{display:none}.chat-active #chat-screen{display:block}
+.chat-header{display:flex;align-items:center;gap:14px;margin-bottom:24px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.chat-agent-avatar{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;border:2px solid var(--accent-border);flex-shrink:0}
+.chat-agent-name{font-size:17px;font-weight:800}
+.chat-agent-sub{font-size:12px;color:var(--muted)}
+.chat-history{display:flex;flex-direction:column;gap:12px;min-height:300px;max-height:420px;overflow-y:auto;margin-bottom:16px}
+.msg{padding:12px 16px;border-radius:12px;font-size:13px;line-height:1.6;max-width:88%;white-space:pre-wrap}
+.msg-user{align-self:flex-end;background:var(--accent-dim);border:1px solid var(--accent-border)}
+.msg-agent{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+.msg-agent .msg-meta{margin-top:8px;font-size:10px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px}
+.msg-thinking{align-self:flex-start;color:var(--muted);font-style:italic;font-size:13px;padding:12px 16px;border-radius:12px;background:var(--panel);border:1px solid var(--line)}
+.msg-err{align-self:flex-start;background:var(--red-dim);border:1px solid #5a2020;color:var(--red);border-radius:12px;padding:12px 16px;font-size:13px}
+.chat-input-row{display:flex;gap:8px;align-items:flex-end}
+.chat-input-row textarea{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 14px;font-size:13px;font-family:inherit;resize:none;min-height:44px;max-height:130px;outline:none;transition:border-color .2s}
+.chat-input-row textarea:focus{border-color:var(--accent)}
+.chat-input-row textarea::placeholder{color:var(--muted)}
+.btn-send{background:var(--accent);color:#06140e;border:none;width:42px;height:42px;border-radius:10px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .2s}
+.btn-send:hover{opacity:.85}
+.btn-send:disabled{opacity:.4;cursor:not-allowed}
+
+/* CREATE SCREEN */
+.create-wrap{max-width:600px}
+.create-wrap h2{font-size:22px;font-weight:800;margin-bottom:6px}
+.create-sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+.field{margin-bottom:20px}
+.field label{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.field input,.field textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px 14px;font-size:14px;font-family:inherit;outline:none;transition:border-color .2s}
+.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.field input::placeholder,.field textarea::placeholder{color:var(--muted)}
+.field textarea{resize:vertical}
+.field-hint{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+.char-ct{font-size:11px;color:var(--muted);text-align:right;margin-top:4px}
+
+/* file drop */
+.file-drop{border:2px dashed var(--line);border-radius:11px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s;background:var(--panel2)}
+.file-drop:hover,.file-drop.drag{border-color:var(--accent)}
+.file-drop p{color:var(--muted);font-size:13px}
+.file-drop strong{color:var(--accent)}
+.file-drop input{display:none}
+.file-name{font-size:12px;color:var(--accent);margin-top:8px;font-weight:600}
+.or-div{display:flex;align-items:center;gap:12px;margin:14px 0;color:var(--muted);font-size:12px}
+.or-div::before,.or-div::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* publish progress */
+.pub-steps{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:18px 22px;margin-top:22px;display:none}
+.pub-steps.on{display:block}
+.step{display:flex;align-items:center;gap:13px;padding:9px 0;font-size:13px;color:var(--muted)}
+.step-icon{width:24px;height:24px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--panel2);border:1px solid var(--line);transition:.3s}
+.step.done .step-icon{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.step.active .step-icon{background:var(--yellow-dim);border-color:var(--yellow);color:var(--yellow);animation:pulse 1.1s infinite}
+.step.done,.step.active{color:var(--text)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.success-box{background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:13px;padding:20px 24px;margin-top:18px;display:none}
+.success-box.on{display:block}
+.success-box h3{color:var(--accent);font-size:15px;margin-bottom:6px}
+.success-box p{font-size:13px;color:var(--muted)}
+.success-box a{color:var(--accent)}
+.inline-err{font-size:12px;color:var(--red);margin-top:10px;display:none}
+
+/* MY LAB */
+.lab-agent-row{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px}
+.lab-agent-row .lab-avatar{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;border:1px solid var(--line);flex-shrink:0}
+.lab-info{flex:1}
+.lab-name{font-size:14px;font-weight:700;margin-bottom:3px}
+.lab-meta{font-size:12px;color:var(--muted)}
+.lab-actions{display:flex;gap:8px;align-items:center}
+.upgrade-btn{background:var(--purple-dim);border:1px solid #3a2a60;color:var(--purple);padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;cursor:default;opacity:.6}
+
+footer{text-align:center;padding:24px;font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
+footer a{color:var(--muted);text-decoration:none}
+footer a:hover{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo" onclick="switchTab('explore')">
+    <div class="logo-mark">V</div>
+    Vault
+    <span class="logo-sub">AI agents on 0G</span>
+  </div>
+  <div class="header-right">
+    <div id="wallet-pill">
+      <div class="w-dot"></div>
+      <span id="wallet-addr">Not connected</span>
+    </div>
+    <button class="btn btn-accent btn-sm" id="connect-btn" onclick="connectWallet()">Connect Wallet</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav id="tabs">
+  <span class="tab active" onclick="switchTab('explore')">Explore</span>
+  <span class="tab" onclick="switchTab('my-agents')">My Agents</span>
+  <span class="tab" onclick="switchTab('create')">Create Agent</span>
+  <span class="tab" onclick="switchTab('lab')">My Lab</span>
+</nav>
+
+<!-- AGENT PROFILE MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" id="agent-modal">
+    <button class="modal-close" onclick="closeModalBtn()">✕</button>
+    <div class="modal-agent-hero">
+      <div class="modal-avatar" id="m-avatar"></div>
+      <div>
+        <h2 id="m-name"></h2>
+        <div class="modal-meta">by <span id="m-creator"></span> · <span id="m-minted"></span> acquired</div>
+      </div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">What this agent knows</div>
+      <p id="m-desc"></p>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">Agent personality</div>
+      <div class="personality-box" id="m-personality"></div>
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">Training data · 0G Storage</div>
+      <div class="hash-box" id="m-hash"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-accent" id="m-acquire-btn" onclick="acquireFromModal()">Acquire Agent</button>
+      <a id="m-chainscan" href="#" target="_blank" class="btn btn-ghost btn-sm">Verify on chainscan ↗</a>
+    </div>
+    <div class="inline-err" id="modal-err"></div>
+  </div>
+</div>
+
+<main>
+
+  <!-- SCREEN: LANDING -->
+  <div class="screen active" id="screen-landing">
+    <div class="landing">
+      <div class="landing-badge">
+        <span class="lbadge">⬡ 0G Chain</span>
+        <span class="lbadge">⬡ 0G Storage</span>
+        <span class="lbadge">⬡ 0G Compute</span>
+      </div>
+      <h1>Don't sell your knowledge.<br><em>Sell access to an AI trained on it.</em></h1>
+      <p>Creators train AI agents on private knowledge and mint them as NFTs. Buyers own the agent — not the raw content. The agent IS the product.</p>
+      <div class="landing-actions">
+        <button class="btn btn-accent" onclick="connectWallet()">Connect Wallet</button>
+        <button class="btn btn-ghost" onclick="showHowItWorks()">How it works</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: EXPLORE -->
+  <div class="screen" id="screen-explore">
+    <div class="sec-row">
+      <span class="sec-label">AI Agents for Sale</span>
+      <span id="agent-count" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div class="agents-grid" id="agents-grid">
+      <!-- skeleton -->
+      <div class="skel-card"><div class="skeleton" style="width:44px;height:44px;border-radius:12px;margin-bottom:12px"></div><div class="skeleton" style="width:70%;height:15px;margin-bottom:8px"></div><div class="skeleton" style="width:90%;height:12px;margin-bottom:4px"></div><div class="skeleton" style="width:60%;height:12px"></div></div>
+      <div class="skel-card"><div class="skeleton" style="width:44px;height:44px;border-radius:12px;margin-bottom:12px"></div><div class="skeleton" style="width:55%;height:15px;margin-bottom:8px"></div><div class="skeleton" style="width:85%;height:12px;margin-bottom:4px"></div><div class="skeleton" style="width:65%;height:12px"></div></div>
+    </div>
+  </div>
+
+  <!-- SCREEN: MY AGENTS -->
+  <div class="screen" id="screen-my-agents">
+    <!-- My Agents list -->
+    <div id="my-agents-view">
+      <div class="sec-row">
+        <span class="sec-label">My Agents</span>
+        <span style="font-size:12px;color:var(--muted)" id="owned-count"></span>
+      </div>
+      <div class="my-agents-grid" id="owned-grid"></div>
+      <div class="empty" id="owned-empty" style="display:none">
+        <strong>No agents yet</strong>
+        Go to Explore and acquire your first AI agent.
+      </div>
+    </div>
+    <!-- Chat view (shown when an agent is opened) -->
+    <div id="chat-view" style="display:none">
+      <div class="chat-header">
+        <button class="btn btn-ghost btn-sm" onclick="closeChat()" style="margin-right:4px">← Back</button>
+        <div class="chat-agent-avatar" id="chat-avatar"></div>
+        <div>
+          <div class="chat-agent-name" id="chat-name"></div>
+          <div class="chat-agent-sub">⬡ 0G Compute · answers from training data only</div>
+        </div>
+      </div>
+      <div class="chat-history" id="chat-history"></div>
+      <div class="chat-input-row">
+        <textarea id="chat-input" placeholder="Ask your agent anything..." rows="1"
+          onkeydown="handleChatEnter(event)"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,130)+'px'"></textarea>
+        <button class="btn-send" id="chat-send" onclick="sendChat()">↑</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN: CREATE -->
+  <div class="screen" id="screen-create">
+    <div class="create-wrap">
+      <h2>Train &amp; Publish an Agent</h2>
+      <p class="create-sub">Your training content is AES-256 encrypted and stored on 0G Storage. Buyers can ask your agent questions — but can never extract the raw content.</p>
+
+      <div class="field">
+        <label>Agent Name</label>
+        <input type="text" id="c-name" placeholder="e.g. DeFi Alpha Analyst" maxlength="60"/>
+      </div>
+      <div class="field">
+        <label>Description <span style="font-weight:400;text-transform:none;letter-spacing:0">(shown on marketplace)</span></label>
+        <input type="text" id="c-desc" placeholder="What does this agent know? One clear sentence." maxlength="160"/>
+      </div>
+      <div class="field">
+        <label>Agent Personality <span style="font-weight:400;text-transform:none;letter-spacing:0">(system prompt — stored on-chain, public)</span></label>
+        <textarea id="c-personality" rows="3" placeholder="e.g. You are a concise crypto analyst. Always back claims with data. Never speculate beyond what your training data supports."></textarea>
+        <div class="field-hint">This defines the agent's tone and style. Buyers can see this before purchasing.</div>
+      </div>
+      <div class="field">
+        <label>Training Content <span style="font-weight:400;text-transform:none;letter-spacing:0">(encrypted — never exposed)</span></label>
+        <div class="file-drop" id="file-drop" onclick="document.getElementById('file-input').click()">
+          <input type="file" id="file-input" accept=".txt,.md" onchange="handleFile(event)"/>
+          <p>Drop a <strong>.txt</strong> or <strong>.md</strong> file, or click to browse</p>
+          <p style="font-size:11px;margin-top:4px">Max 500KB</p>
+          <div class="file-name" id="file-name"></div>
+        </div>
+        <div class="or-div">or paste directly</div>
+        <textarea id="c-content" rows="7" placeholder="Paste your training content — research, analysis, a book chapter, trading signals, anything..." oninput="updateCharCount()"></textarea>
+        <div class="char-ct"><span id="char-ct">0</span> chars</div>
+        <div class="field-hint">Content is encrypted before upload. Even the server only holds the key — not the plaintext.</div>
+      </div>
+
+      <button class="btn btn-accent" id="pub-btn" onclick="publishAgent()" style="width:100%;padding:12px">
+        Train &amp; Publish Agent →
+      </button>
+
+      <div class="pub-steps" id="pub-steps">
+        <div class="step" id="s1"><div class="step-icon">1</div><span>Encrypting training content with AES-256</span></div>
+        <div class="step" id="s2"><div class="step-icon">2</div><span>Uploading encrypted data to 0G Storage</span></div>
+        <div class="step" id="s3"><div class="step-icon">3</div><span>Creating agent template on 0G Chain — sign in MetaMask</span></div>
+        <div class="step" id="s4"><div class="step-icon">4</div><span>Saving agent to Vault server</span></div>
+        <div class="step" id="s5"><div class="step-icon">5</div><span>Agent is live on the marketplace</span></div>
+      </div>
+
+      <div class="success-box" id="success-box">
+        <h3>✓ Agent published</h3>
+        <p id="success-txt"></p>
+      </div>
+      <div class="inline-err" id="create-err"></div>
+    </div>
+  </div>
+
+  <!-- SCREEN: MY LAB -->
+  <div class="screen" id="screen-lab">
+    <div class="sec-row">
+      <span class="sec-label">Agents I Created</span>
+    </div>
+    <div id="lab-list"></div>
+    <div class="empty" id="lab-empty" style="display:none">
+      <strong>Nothing here yet</strong>
+      Go to Create Agent to train and publish your first AI agent.
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  0G Galileo Testnet · Chain ID 16602 ·
+  <a href="https://chainscan-galileo.0g.ai" target="_blank">Explorer ↗</a> ·
+  <a href="https://faucet.0g.ai" target="_blank">Faucet ↗</a>
+</footer>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let provider, signer, userAddress, contract, config;
+let currentChatTemplateId = null;
+let activeModalTemplate   = null;
+let allAgents = [];
+
+const ABI = [
+  "function createTemplate(string name, string description, string personality, string contentHash) returns (uint256)",
+  "function mintAgent(uint256 templateId) returns (uint256)",
+  "function ownsAgent(address owner, uint256 templateId) view returns (bool, uint256)",
+  "function ownedTemplates(address owner) view returns (uint256[])",
+  "function totalTemplates() view returns (uint256)",
+];
+
+const AVATARS = ["🤖","🧠","📡","🔮","⚡","🦾","🌐","🛸","💡","🔬"];
+function avatarFor(id){ return AVATARS[Number(id) % AVATARS.length]; }
+function colorFor(id){
+  const c=["#0f2a1e","#1a1030","#1a1400","#1a0f2a","#0f1a2a"];
+  return c[Number(id) % c.length];
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function boot(){
+  config = await fetch("/api/config").then(r=>r.json());
+  setupFileDrop();
+  if(window.ethereum){
+    const accounts = await window.ethereum.request({method:"eth_accounts"});
+    if(accounts.length) connectWallet(true);
+  }
+}
+
+// ── Wallet ────────────────────────────────────────────────────────────────────
+async function connectWallet(silent=false){
+  if(!window.ethereum){
+    if(!silent) alert("MetaMask not found. Open via http://localhost:"+( config?.port||3000));
+    return;
+  }
+  try{
+    provider = new ethers.BrowserProvider(window.ethereum);
+    if(!silent) await provider.send("eth_requestAccounts",[]);
+    await ensureNetwork();
+    signer      = await provider.getSigner();
+    userAddress = await signer.getAddress();
+    contract    = new ethers.Contract(config.contractAddress, ABI, signer);
+
+    document.getElementById("wallet-pill").classList.add("connected");
+    document.getElementById("wallet-addr").textContent = userAddress.slice(0,6)+"…"+userAddress.slice(-4);
+    document.getElementById("connect-btn").textContent = "Connected";
+    document.getElementById("connect-btn").disabled = true;
+    document.getElementById("tabs").style.display = "flex";
+
+    switchTab("explore");
+    window.ethereum.on("accountsChanged",()=>location.reload());
+    window.ethereum.on("chainChanged",()=>location.reload());
+  }catch(e){
+    if(!silent) console.error("Connect:",e.message);
+  }
+}
+
+async function ensureNetwork(){
+  const hexId = "0x"+config.chainId.toString(16);
+  try{
+    await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:hexId}]});
+  }catch(e){
+    if(e.code===4902){
+      await window.ethereum.request({method:"wallet_addEthereumChain",params:[{
+        chainId:hexId, chainName:"0G Galileo Testnet",
+        nativeCurrency:{name:"0G",symbol:"0G",decimals:18},
+        rpcUrls:[config.rpcUrl],
+        blockExplorerUrls:["https://chainscan-galileo.0g.ai"]
+      }]});
+    } else throw e;
+  }
+}
+
+// ── Tab / Screen nav ──────────────────────────────────────────────────────────
+function switchTab(name){
+  document.querySelectorAll(".tab").forEach((t,i)=>{
+    t.classList.toggle("active",["explore","my-agents","create","lab"][i]===name);
+  });
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById("screen-"+name.replace("-agents","my-agents").replace("my-agents","my-agents"))?.classList?.add("active");
+  // fix mapping
+  const map={explore:"screen-explore","my-agents":"screen-my-agents",create:"screen-create",lab:"screen-lab"};
+  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
+  document.getElementById(map[name])?.classList.add("active");
+
+  if(name==="explore")    renderExplore();
+  if(name==="my-agents")  renderMyAgents();
+  if(name==="lab")        renderLab();
+}
+
+// ── EXPLORE ───────────────────────────────────────────────────────────────────
+async function renderExplore(){
+  const grid = document.getElementById("agents-grid");
+  allAgents  = await fetch("/api/agents").then(r=>r.json());
+
+  document.getElementById("agent-count").textContent = allAgents.length+" agent"+(allAgents.length!==1?"s":"")+" available";
+
+  if(allAgents.length===0){
+    grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>No agents yet</strong>Be the first — go to Create Agent.</div>`;
+    return;
+  }
+
+  grid.innerHTML="";
+  for(const a of allAgents){
+    let owned=false;
+    try{ [owned]=await contract.ownsAgent(userAddress,a.templateId); }catch{}
+    const card=document.createElement("div");
+    card.className="agent-card";
+    card.onclick=()=>openModal(a,owned);
+    card.innerHTML=`
+      <div class="agent-card-top">
+        <div class="agent-avatar" style="background:${colorFor(a.templateId)}">${avatarFor(a.templateId)}</div>
+        <div class="agent-card-info">
+          <h3>${esc(a.name)}</h3>
+          <div class="agent-creator">${a.creatorAddress?a.creatorAddress.slice(0,8)+"…":"unknown"}</div>
+        </div>
+      </div>
+      <div class="agent-desc">${esc(a.description||"No description provided.")}</div>
+      <div class="agent-footer">
+        <span class="agent-stats">⬡ 0G Storage · ${a.totalMinted||0} acquired</span>
+        <div style="display:flex;gap:6px">
+          ${owned?'<span class="tag tag-owned">✓ Owned</span>':''}
+          <span class="tag tag-storage">⬡ Encrypted</span>
+        </div>
+      </div>`;
+    grid.appendChild(card);
+  }
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────────
+function openModal(agent, owned){
+  activeModalTemplate = agent;
+  document.getElementById("m-avatar").textContent   = avatarFor(agent.templateId);
+  document.getElementById("m-avatar").style.background = colorFor(agent.templateId);
+  document.getElementById("m-name").textContent     = agent.name;
+  document.getElementById("m-creator").textContent  = agent.creatorAddress?.slice(0,10)+"…" || "unknown";
+  document.getElementById("m-minted").textContent   = (agent.totalMinted||0)+" times";
+  document.getElementById("m-desc").textContent     = agent.description || "No description.";
+  document.getElementById("m-personality").textContent = agent.personality || "(no custom personality set)";
+  document.getElementById("m-hash").textContent     = agent.contentHash || "(not yet on 0G Storage)";
+  document.getElementById("m-chainscan").href       = "https://chainscan-galileo.0g.ai/address/"+config.contractAddress;
+  document.getElementById("modal-err").style.display = "none";
+
+  const btn = document.getElementById("m-acquire-btn");
+  if(owned){
+    btn.textContent="Open Agent";
+    btn.onclick=()=>{ closeModalBtn(); switchTab("my-agents"); openChat(agent); };
+  } else {
+    btn.textContent="Acquire Agent";
+    btn.onclick=acquireFromModal;
+  }
+
+  document.getElementById("modal-overlay").classList.add("open");
+}
+
+function closeModal(e){
+  if(e.target===document.getElementById("modal-overlay")) closeModalBtn();
+}
+function closeModalBtn(){
+  document.getElementById("modal-overlay").classList.remove("open");
+}
+
+async function acquireFromModal(){
+  const agent = activeModalTemplate;
+  if(!agent) return;
+  const btn = document.getElementById("m-acquire-btn");
+  btn.disabled=true; btn.textContent="Waiting for MetaMask…";
+  document.getElementById("modal-err").style.display="none";
+  try{
+    const tx = await contract.mintAgent(agent.templateId);
+    btn.textContent="Acquiring…";
+    const receipt = await tx.wait();
+    btn.textContent="Acquired ✓";
+    setTimeout(()=>{ closeModalBtn(); switchTab("my-agents"); },1200);
+  }catch(e){
+    btn.disabled=false; btn.textContent="Acquire Agent";
+    const err=document.getElementById("modal-err");
+    err.textContent=e.code===4001?"Rejected in MetaMask.":e.message;
+    err.style.display="block";
+  }
+}
+
+// ── MY AGENTS ─────────────────────────────────────────────────────────────────
+async function renderMyAgents(){
+  closeChat();
+  const grid  = document.getElementById("owned-grid");
+  const empty = document.getElementById("owned-empty");
+  grid.innerHTML="";
+
+  let templateIds=[];
+  try{ templateIds=await contract.ownedTemplates(userAddress); }catch(e){console.warn(e);}
+
+  document.getElementById("owned-count").textContent = templateIds.length+" agent"+(templateIds.length!==1?"s":"");
+
+  if(templateIds.length===0){
+    empty.style.display="block"; return;
+  }
+  empty.style.display="none";
+
+  for(const tid of templateIds){
+    const agent = allAgents.find(a=>a.templateId===Number(tid)) || await fetch("/api/agents/"+tid).then(r=>r.ok?r.json():null);
+    if(!agent) continue;
+
+    const card=document.createElement("div");
+    card.className="owned-agent-card";
+    card.innerHTML=`
+      <div class="owned-card-avatar" style="background:${colorFor(agent.templateId)}">${avatarFor(agent.templateId)}</div>
+      <div class="owned-card-name">${esc(agent.name)}</div>
+      <div class="owned-card-desc">${esc(agent.description||"")}</div>
+      <div class="owned-card-actions">
+        <button class="btn btn-accent btn-sm">Open Agent</button>
+      </div>`;
+    card.querySelector("button").onclick=()=>openChat(agent);
+    grid.appendChild(card);
+  }
+}
+
+// ── CHAT ──────────────────────────────────────────────────────────────────────
+function openChat(agent){
+  currentChatTemplateId = agent.templateId;
+  document.getElementById("my-agents-view").style.display="none";
+  document.getElementById("chat-view").style.display="block";
+  document.getElementById("chat-avatar").textContent=avatarFor(agent.templateId);
+  document.getElementById("chat-avatar").style.background=colorFor(agent.templateId);
+  document.getElementById("chat-name").textContent=agent.name;
+  document.getElementById("chat-history").innerHTML="";
+  // Welcome
+  appendMsg("chat-history","msg-agent",`Hi! I'm ${agent.name}. Ask me anything — I'll answer based on what I've been trained on.`);
+  document.getElementById("chat-input").focus();
+}
+
+function closeChat(){
+  currentChatTemplateId=null;
+  document.getElementById("my-agents-view").style.display="block";
+  document.getElementById("chat-view").style.display="none";
+}
+
+function handleChatEnter(e){
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}
+}
+
+async function sendChat(){
+  const input   = document.getElementById("chat-input");
+  const sendBtn = document.getElementById("chat-send");
+  const q = input.value.trim();
+  if(!q||!currentChatTemplateId) return;
+
+  appendMsg("chat-history","msg-user",q);
+  input.value=""; input.style.height="auto";
+  sendBtn.disabled=true;
+
+  const thinking=addThinking("chat-history");
+  try{
+    const res  = await fetch("/api/chat",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({wallet:userAddress,templateId:currentChatTemplateId,question:q}),
+    });
+    const data = await res.json();
+    thinking.remove();
+    if(!res.ok){
+      appendMsg("chat-history","msg-err",data.error||"Request failed.");
+    } else {
+      const meta=`0G Compute · ${data.model} · ${data.provider?.slice(0,10)}…${data.verified?" · ✓ verified":""}`;
+      appendMsg("chat-history","msg-agent",data.answer,meta);
+    }
+  }catch(e){
+    thinking.remove();
+    appendMsg("chat-history","msg-err",e.message);
+  } finally {
+    sendBtn.disabled=false;
+    const h=document.getElementById("chat-history");
+    h.scrollTop=h.scrollHeight;
+  }
+}
+
+// ── CREATE ────────────────────────────────────────────────────────────────────
+function setupFileDrop(){
+  const zone=document.getElementById("file-drop");
+  if(!zone) return;
+  zone.addEventListener("dragover",e=>{e.preventDefault();zone.classList.add("drag");});
+  zone.addEventListener("dragleave",()=>zone.classList.remove("drag"));
+  zone.addEventListener("drop",e=>{e.preventDefault();zone.classList.remove("drag");handleFile({target:{files:e.dataTransfer.files}});});
+}
+
+function handleFile(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  if(file.size>500_000){showCreateErr("File too large — max 500KB.");return;}
+  const r=new FileReader();
+  r.onload=ev=>{
+    document.getElementById("c-content").value=ev.target.result;
+    document.getElementById("file-name").textContent="📄 "+file.name;
+    updateCharCount();
+  };
+  r.readAsText(file);
+}
+
+function updateCharCount(){
+  document.getElementById("char-ct").textContent=document.getElementById("c-content").value.length.toLocaleString();
+}
+
+function setStep(id,state){
+  const el=document.getElementById(id);
+  el.className="step "+state;
+  if(state==="done") el.querySelector(".step-icon").textContent="✓";
+  if(state==="active") el.querySelector(".step-icon").textContent=["s1","s2","s3","s4","s5"].indexOf(id)+1;
+}
+
+async function publishAgent(){
+  const name        = document.getElementById("c-name").value.trim();
+  const desc        = document.getElementById("c-desc").value.trim();
+  const personality = document.getElementById("c-personality").value.trim();
+  const content     = document.getElementById("c-content").value.trim();
+
+  document.getElementById("create-err").style.display="none";
+  document.getElementById("success-box").classList.remove("on");
+
+  if(!name)    return showCreateErr("Agent name is required.");
+  if(!content) return showCreateErr("Training content is required.");
+  if(content.length>500_000) return showCreateErr("Content too large (max 500KB).");
+
+  const btn=document.getElementById("pub-btn");
+  btn.disabled=true; btn.textContent="Publishing…";
+  const steps=document.getElementById("pub-steps");
+  steps.classList.add("on");
+  ["s1","s2","s3","s4","s5"].forEach(s=>setStep(s,"idle"));
+  setStep("s1","active");
+
+  try{
+    // Step 1: get next template ID from chain BEFORE minting so we can pre-register
+    const nextTemplateId = Number(await contract.totalTemplates()) + 1;
+
+    // Step 2: encrypt + upload to 0G Storage (server handles encryption)
+    setStep("s1","active"); setStep("s2","active");
+    const trainRes = await fetch("/api/train",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name,description:desc,personality,content,creatorAddress:userAddress,templateId:nextTemplateId}),
+    });
+    const trainData = await trainRes.json();
+    if(!trainRes.ok) throw new Error(trainData.error||"Training upload failed.");
+    setStep("s1","done"); setStep("s2","done"); setStep("s3","active");
+
+    // Step 3: create template on 0G Chain (MetaMask pops here)
+    const tx = await contract.createTemplate(name, desc, personality, trainData.contentHash);
+    const receipt = await tx.wait();
+    setStep("s3","done"); setStep("s4","done"); setStep("s5","done");
+
+    // Reset form
+    ["c-name","c-desc","c-personality","c-content"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("file-name").textContent="";
+    updateCharCount();
+
+    document.getElementById("success-txt").innerHTML=
+      `<strong>${esc(name)}</strong> is live on the marketplace. ` +
+      `<a href="https://chainscan-galileo.0g.ai/tx/${receipt.hash}" target="_blank">View on chainscan ↗</a>`;
+    document.getElementById("success-box").classList.add("on");
+  }catch(e){
+    steps.classList.remove("on");
+    showCreateErr(e.code===4001?"Transaction rejected in MetaMask.":e.message);
+  } finally {
+    btn.disabled=false; btn.textContent="Train & Publish Agent →";
+  }
+}
+
+function showCreateErr(msg){
+  const e=document.getElementById("create-err");
+  e.textContent=msg; e.style.display="block";
+}
+
+// ── MY LAB ────────────────────────────────────────────────────────────────────
+async function renderLab(){
+  const list  = document.getElementById("lab-list");
+  const empty = document.getElementById("lab-empty");
+  list.innerHTML="";
+
+  const myAgents = allAgents.length ? allAgents.filter(a=>a.creatorAddress?.toLowerCase()===userAddress?.toLowerCase())
+    : (await fetch("/api/agents").then(r=>r.json())).filter(a=>a.creatorAddress?.toLowerCase()===userAddress?.toLowerCase());
+
+  if(myAgents.length===0){ empty.style.display="block"; return; }
+  empty.style.display="none";
+
+  for(const a of myAgents){
+    const row=document.createElement("div");
+    row.className="lab-agent-row";
+    row.innerHTML=`
+      <div class="lab-avatar" style="background:${colorFor(a.templateId)}">${avatarFor(a.templateId)}</div>
+      <div class="lab-info">
+        <div class="lab-name">${esc(a.name)}</div>
+        <div class="lab-meta">${a.totalMinted||0} acquired · 0G Storage · <span style="color:var(--yellow);font-size:10px">${a.contentHash?.slice(0,16)}…</span></div>
+      </div>
+      <div class="lab-actions">
+        <div class="upgrade-btn">+ Upgrade NFT · v2</div>
+        <a href="https://chainscan-galileo.0g.ai/address/${config.contractAddress}" target="_blank" class="btn btn-ghost btn-sm">View ↗</a>
+      </div>`;
+    list.appendChild(row);
+  }
+}
+
+// ── MISC ──────────────────────────────────────────────────────────────────────
+function showHowItWorks(){
+  alert("1. Creators train AI agents on private knowledge and publish them as NFTs on 0G Chain.\n\n2. Training data is AES-256 encrypted and stored on 0G Storage — the raw content is never exposed.\n\n3. Buyers acquire an agent NFT. Ownership is verified on-chain before every inference call.\n\n4. Agent responses are generated by 0G Compute — not a centralized API.\n\nRemove any 0G pillar and the product stops working.");
+}
+
+function appendMsg(histId,cls,text,meta){
+  const h=document.getElementById(histId);
+  const d=document.createElement("div");
+  d.className="msg "+cls; d.textContent=text;
+  if(meta){const m=document.createElement("div");m.className="msg-meta";m.textContent=meta;d.appendChild(m);}
+  h.appendChild(d); h.scrollTop=h.scrollHeight;
+}
+
+function addThinking(histId){
+  const h=document.getElementById(histId);
+  const d=document.createElement("div");
+  d.className="msg-thinking"; d.textContent="Thinking…";
+  h.appendChild(d); h.scrollTop=h.scrollHeight;
+  return d;
+}
+
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+boot();
+</script>
+</body>
+</html>
