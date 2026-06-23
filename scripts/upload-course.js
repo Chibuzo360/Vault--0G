@@ -22,7 +22,7 @@ const path = require("path");
 const RPC_URL      = process.env.RPC_URL || "https://evmrpc-testnet.0g.ai";
 const INDEXER_URL  = process.env.INDEXER_URL || "https://indexer-storage-testnet-turbo.0g.ai";
 const PRIVATE_KEY  = process.env.PRIVATE_KEY;
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const CONTRACT_ADDRESS = process.env.KNOWLEDGE_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS;
 
 const CONTRACT_ABI = [
   "function mintCourse(uint256 courseId, string contentHash, string title) returns (uint256)",
@@ -87,8 +87,14 @@ async function uploadCourse(course, indexer, signer) {
 }
 
 async function main() {
-  if (!PRIVATE_KEY || !CONTRACT_ADDRESS) {
-    console.error("Set PRIVATE_KEY and CONTRACT_ADDRESS in .env first.");
+  if (!PRIVATE_KEY) {
+    console.error("Set PRIVATE_KEY in .env first.");
+    process.exit(1);
+  }
+  if (!process.env.KNOWLEDGE_CONTRACT_ADDRESS && !process.env.CONTRACT_ADDRESS) {
+    console.error("Set KNOWLEDGE_CONTRACT_ADDRESS in .env.");
+    console.error("Deploy KnowledgeNFT with: npx hardhat run scripts/deploy-knowledge.js --network galileo");
+    console.error("(Do not use the AgentNFT CONTRACT_ADDRESS — this script calls mintCourse on KnowledgeNFT.)");
     process.exit(1);
   }
 

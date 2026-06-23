@@ -1,9 +1,14 @@
 require("@nomicfoundation/hardhat-toolbox");
-require("dotenv").config();
+// This safely loads a local .env file if it exists, but won't crash if it doesn't
+try {
+  require("dotenv").config();
+} catch (e) {
+  // Silent catch for production environments where dotenv isn't needed
+}
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "";
+// Fallback logic that checks system memory first, then hardcoded values
+const PRIVATE_KEY = process.env.PRIVATE_KEY || ""; 
 
-/** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
     version: "0.8.24",

@@ -183,9 +183,43 @@ main{max-width:860px;margin:0 auto;padding:28px 20px 80px}
 footer{text-align:center;padding:24px;font-size:11px;color:var(--muted);border-top:1px solid var(--line)}
 footer a{color:var(--muted);text-decoration:none}
 footer a:hover{color:var(--accent)}
+
+/* WALLET GATE */
+#wallet-gate{display:none;position:fixed;inset:0;z-index:300;background:rgba(9,12,17,.97);backdrop-filter:blur(12px);align-items:center;justify-content:center;padding:24px}
+#wallet-gate.open{display:flex}
+.wallet-gate-card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:36px 32px;max-width:420px;width:100%;text-align:center}
+.wallet-gate-card .logo-mark{width:48px;height:48px;font-size:22px;margin:0 auto 16px}
+.wallet-gate-card h2{font-size:22px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em}
+.wallet-gate-card p{color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:24px}
+.wallet-gate-card .gate-badges{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.wallet-gate-card .lbadge{font-size:10px;padding:3px 10px}
+.wallet-gate-status{font-size:12px;color:var(--muted);margin-top:14px;min-height:18px}
+.wallet-gate-status.err{color:var(--red)}
+.wallet-gate-status.ok{color:var(--accent)}
 </style>
 </head>
 <body>
+
+<!-- WALLET CONNECT GATE (shown until wallet is connected) -->
+<div id="wallet-gate" class="open">
+  <div class="wallet-gate-card">
+    <div class="logo-mark">V</div>
+    <h2>Connect your wallet</h2>
+    <p>Vault runs on 0G Galileo Testnet. Connect MetaMask to explore, create, and chat with AI agents.</p>
+    <div class="gate-badges">
+      <span class="lbadge">⬡ 0G Chain</span>
+      <span class="lbadge">⬡ 0G Storage</span>
+      <span class="lbadge">⬡ 0G Compute</span>
+    </div>
+    <button class="btn btn-accent" id="gate-connect-btn" style="width:100%;padding:12px">
+      Connect Wallet
+    </button>
+    <button class="btn btn-ghost" id="gate-deploy-btn" style="width:100%;padding:12px;margin-top:10px;display:none">
+      Deploy Marketplace Contract
+    </button>
+    <div class="wallet-gate-status" id="wallet-gate-status">Click Connect Wallet to open MetaMask</div>
+  </div>
+</div>
 
 <!-- HEADER -->
 <header>
@@ -199,7 +233,7 @@ footer a:hover{color:var(--accent)}
       <div class="w-dot"></div>
       <span id="wallet-addr">Not connected</span>
     </div>
-    <button class="btn btn-accent btn-sm" id="connect-btn" onclick="connectWallet()">Connect Wallet</button>
+    <button class="btn btn-accent btn-sm" id="connect-btn">Connect Wallet</button>
   </div>
 </header>
 
@@ -244,8 +278,8 @@ footer a:hover{color:var(--accent)}
 
 <main>
 
-  <!-- SCREEN: LANDING -->
-  <div class="screen active" id="screen-landing">
+  <!-- SCREEN: LANDING (fallback if wallet gate dismissed — hidden by default) -->
+  <div class="screen" id="screen-landing">
     <div class="landing">
       <div class="landing-badge">
         <span class="lbadge">⬡ 0G Chain</span>
@@ -381,431 +415,11 @@ footer a:hover{color:var(--accent)}
   <a href="https://faucet.0g.ai" target="_blank">Faucet ↗</a>
 </footer>
 
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
+<script src="/vendor/0g-storage/zgstorage.umd.min.js" onerror="console.error('Failed to load 0G Storage SDK')"></script>
 <script>
-// ── State ─────────────────────────────────────────────────────────────────────
-let provider, signer, userAddress, contract, config;
-let currentChatTemplateId = null;
-let activeModalTemplate   = null;
-let allAgents = [];
-
-const ABI = [
-  "function createTemplate(string name, string description, string personality, string contentHash) returns (uint256)",
-  "function mintAgent(uint256 templateId) returns (uint256)",
-  "function ownsAgent(address owner, uint256 templateId) view returns (bool, uint256)",
-  "function ownedTemplates(address owner) view returns (uint256[])",
-  "function totalTemplates() view returns (uint256)",
-];
-
-const AVATARS = ["🤖","🧠","📡","🔮","⚡","🦾","🌐","🛸","💡","🔬"];
-function avatarFor(id){ return AVATARS[Number(id) % AVATARS.length]; }
-function colorFor(id){
-  const c=["#0f2a1e","#1a1030","#1a1400","#1a0f2a","#0f1a2a"];
-  return c[Number(id) % c.length];
-}
-
-// ── Boot ──────────────────────────────────────────────────────────────────────
-async function boot(){
-  config = await fetch("/api/config").then(r=>r.json());
-  setupFileDrop();
-  if(window.ethereum){
-    const accounts = await window.ethereum.request({method:"eth_accounts"});
-    if(accounts.length) connectWallet(true);
-  }
-}
-
-// ── Wallet ────────────────────────────────────────────────────────────────────
-async function connectWallet(silent=false){
-  if(!window.ethereum){
-    if(!silent) alert("MetaMask not found. Open via http://localhost:"+( config?.port||3000));
-    return;
-  }
-  try{
-    provider = new ethers.BrowserProvider(window.ethereum);
-    if(!silent) await provider.send("eth_requestAccounts",[]);
-    await ensureNetwork();
-    signer      = await provider.getSigner();
-    userAddress = await signer.getAddress();
-    contract    = new ethers.Contract(config.contractAddress, ABI, signer);
-
-    document.getElementById("wallet-pill").classList.add("connected");
-    document.getElementById("wallet-addr").textContent = userAddress.slice(0,6)+"…"+userAddress.slice(-4);
-    document.getElementById("connect-btn").textContent = "Connected";
-    document.getElementById("connect-btn").disabled = true;
-    document.getElementById("tabs").style.display = "flex";
-
-    switchTab("explore");
-    window.ethereum.on("accountsChanged",()=>location.reload());
-    window.ethereum.on("chainChanged",()=>location.reload());
-  }catch(e){
-    if(!silent) console.error("Connect:",e.message);
-  }
-}
-
-async function ensureNetwork(){
-  const hexId = "0x"+config.chainId.toString(16);
-  try{
-    await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:hexId}]});
-  }catch(e){
-    if(e.code===4902){
-      await window.ethereum.request({method:"wallet_addEthereumChain",params:[{
-        chainId:hexId, chainName:"0G Galileo Testnet",
-        nativeCurrency:{name:"0G",symbol:"0G",decimals:18},
-        rpcUrls:[config.rpcUrl],
-        blockExplorerUrls:["https://chainscan-galileo.0g.ai"]
-      }]});
-    } else throw e;
-  }
-}
-
-// ── Tab / Screen nav ──────────────────────────────────────────────────────────
-function switchTab(name){
-  document.querySelectorAll(".tab").forEach((t,i)=>{
-    t.classList.toggle("active",["explore","my-agents","create","lab"][i]===name);
-  });
-  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
-  document.getElementById("screen-"+name.replace("-agents","my-agents").replace("my-agents","my-agents"))?.classList?.add("active");
-  // fix mapping
-  const map={explore:"screen-explore","my-agents":"screen-my-agents",create:"screen-create",lab:"screen-lab"};
-  document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));
-  document.getElementById(map[name])?.classList.add("active");
-
-  if(name==="explore")    renderExplore();
-  if(name==="my-agents")  renderMyAgents();
-  if(name==="lab")        renderLab();
-}
-
-// ── EXPLORE ───────────────────────────────────────────────────────────────────
-async function renderExplore(){
-  const grid = document.getElementById("agents-grid");
-  allAgents  = await fetch("/api/agents").then(r=>r.json());
-
-  document.getElementById("agent-count").textContent = allAgents.length+" agent"+(allAgents.length!==1?"s":"")+" available";
-
-  if(allAgents.length===0){
-    grid.innerHTML=`<div class="empty" style="grid-column:1/-1"><strong>No agents yet</strong>Be the first — go to Create Agent.</div>`;
-    return;
-  }
-
-  grid.innerHTML="";
-  for(const a of allAgents){
-    let owned=false;
-    try{ [owned]=await contract.ownsAgent(userAddress,a.templateId); }catch{}
-    const card=document.createElement("div");
-    card.className="agent-card";
-    card.onclick=()=>openModal(a,owned);
-    card.innerHTML=`
-      <div class="agent-card-top">
-        <div class="agent-avatar" style="background:${colorFor(a.templateId)}">${avatarFor(a.templateId)}</div>
-        <div class="agent-card-info">
-          <h3>${esc(a.name)}</h3>
-          <div class="agent-creator">${a.creatorAddress?a.creatorAddress.slice(0,8)+"…":"unknown"}</div>
-        </div>
-      </div>
-      <div class="agent-desc">${esc(a.description||"No description provided.")}</div>
-      <div class="agent-footer">
-        <span class="agent-stats">⬡ 0G Storage · ${a.totalMinted||0} acquired</span>
-        <div style="display:flex;gap:6px">
-          ${owned?'<span class="tag tag-owned">✓ Owned</span>':''}
-          <span class="tag tag-storage">⬡ Encrypted</span>
-        </div>
-      </div>`;
-    grid.appendChild(card);
-  }
-}
-
-// ── MODAL ─────────────────────────────────────────────────────────────────────
-function openModal(agent, owned){
-  activeModalTemplate = agent;
-  document.getElementById("m-avatar").textContent   = avatarFor(agent.templateId);
-  document.getElementById("m-avatar").style.background = colorFor(agent.templateId);
-  document.getElementById("m-name").textContent     = agent.name;
-  document.getElementById("m-creator").textContent  = agent.creatorAddress?.slice(0,10)+"…" || "unknown";
-  document.getElementById("m-minted").textContent   = (agent.totalMinted||0)+" times";
-  document.getElementById("m-desc").textContent     = agent.description || "No description.";
-  document.getElementById("m-personality").textContent = agent.personality || "(no custom personality set)";
-  document.getElementById("m-hash").textContent     = agent.contentHash || "(not yet on 0G Storage)";
-  document.getElementById("m-chainscan").href       = "https://chainscan-galileo.0g.ai/address/"+config.contractAddress;
-  document.getElementById("modal-err").style.display = "none";
-
-  const btn = document.getElementById("m-acquire-btn");
-  if(owned){
-    btn.textContent="Open Agent";
-    btn.onclick=()=>{ closeModalBtn(); switchTab("my-agents"); openChat(agent); };
-  } else {
-    btn.textContent="Acquire Agent";
-    btn.onclick=acquireFromModal;
-  }
-
-  document.getElementById("modal-overlay").classList.add("open");
-}
-
-function closeModal(e){
-  if(e.target===document.getElementById("modal-overlay")) closeModalBtn();
-}
-function closeModalBtn(){
-  document.getElementById("modal-overlay").classList.remove("open");
-}
-
-async function acquireFromModal(){
-  const agent = activeModalTemplate;
-  if(!agent) return;
-  const btn = document.getElementById("m-acquire-btn");
-  btn.disabled=true; btn.textContent="Waiting for MetaMask…";
-  document.getElementById("modal-err").style.display="none";
-  try{
-    const tx = await contract.mintAgent(agent.templateId);
-    btn.textContent="Acquiring…";
-    const receipt = await tx.wait();
-    btn.textContent="Acquired ✓";
-    setTimeout(()=>{ closeModalBtn(); switchTab("my-agents"); },1200);
-  }catch(e){
-    btn.disabled=false; btn.textContent="Acquire Agent";
-    const err=document.getElementById("modal-err");
-    err.textContent=e.code===4001?"Rejected in MetaMask.":e.message;
-    err.style.display="block";
-  }
-}
-
-// ── MY AGENTS ─────────────────────────────────────────────────────────────────
-async function renderMyAgents(){
-  closeChat();
-  const grid  = document.getElementById("owned-grid");
-  const empty = document.getElementById("owned-empty");
-  grid.innerHTML="";
-
-  let templateIds=[];
-  try{ templateIds=await contract.ownedTemplates(userAddress); }catch(e){console.warn(e);}
-
-  document.getElementById("owned-count").textContent = templateIds.length+" agent"+(templateIds.length!==1?"s":"");
-
-  if(templateIds.length===0){
-    empty.style.display="block"; return;
-  }
-  empty.style.display="none";
-
-  for(const tid of templateIds){
-    const agent = allAgents.find(a=>a.templateId===Number(tid)) || await fetch("/api/agents/"+tid).then(r=>r.ok?r.json():null);
-    if(!agent) continue;
-
-    const card=document.createElement("div");
-    card.className="owned-agent-card";
-    card.innerHTML=`
-      <div class="owned-card-avatar" style="background:${colorFor(agent.templateId)}">${avatarFor(agent.templateId)}</div>
-      <div class="owned-card-name">${esc(agent.name)}</div>
-      <div class="owned-card-desc">${esc(agent.description||"")}</div>
-      <div class="owned-card-actions">
-        <button class="btn btn-accent btn-sm">Open Agent</button>
-      </div>`;
-    card.querySelector("button").onclick=()=>openChat(agent);
-    grid.appendChild(card);
-  }
-}
-
-// ── CHAT ──────────────────────────────────────────────────────────────────────
-function openChat(agent){
-  currentChatTemplateId = agent.templateId;
-  document.getElementById("my-agents-view").style.display="none";
-  document.getElementById("chat-view").style.display="block";
-  document.getElementById("chat-avatar").textContent=avatarFor(agent.templateId);
-  document.getElementById("chat-avatar").style.background=colorFor(agent.templateId);
-  document.getElementById("chat-name").textContent=agent.name;
-  document.getElementById("chat-history").innerHTML="";
-  // Welcome
-  appendMsg("chat-history","msg-agent",`Hi! I'm ${agent.name}. Ask me anything — I'll answer based on what I've been trained on.`);
-  document.getElementById("chat-input").focus();
-}
-
-function closeChat(){
-  currentChatTemplateId=null;
-  document.getElementById("my-agents-view").style.display="block";
-  document.getElementById("chat-view").style.display="none";
-}
-
-function handleChatEnter(e){
-  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendChat();}
-}
-
-async function sendChat(){
-  const input   = document.getElementById("chat-input");
-  const sendBtn = document.getElementById("chat-send");
-  const q = input.value.trim();
-  if(!q||!currentChatTemplateId) return;
-
-  appendMsg("chat-history","msg-user",q);
-  input.value=""; input.style.height="auto";
-  sendBtn.disabled=true;
-
-  const thinking=addThinking("chat-history");
-  try{
-    const res  = await fetch("/api/chat",{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({wallet:userAddress,templateId:currentChatTemplateId,question:q}),
-    });
-    const data = await res.json();
-    thinking.remove();
-    if(!res.ok){
-      appendMsg("chat-history","msg-err",data.error||"Request failed.");
-    } else {
-      const meta=`0G Compute · ${data.model} · ${data.provider?.slice(0,10)}…${data.verified?" · ✓ verified":""}`;
-      appendMsg("chat-history","msg-agent",data.answer,meta);
-    }
-  }catch(e){
-    thinking.remove();
-    appendMsg("chat-history","msg-err",e.message);
-  } finally {
-    sendBtn.disabled=false;
-    const h=document.getElementById("chat-history");
-    h.scrollTop=h.scrollHeight;
-  }
-}
-
-// ── CREATE ────────────────────────────────────────────────────────────────────
-function setupFileDrop(){
-  const zone=document.getElementById("file-drop");
-  if(!zone) return;
-  zone.addEventListener("dragover",e=>{e.preventDefault();zone.classList.add("drag");});
-  zone.addEventListener("dragleave",()=>zone.classList.remove("drag"));
-  zone.addEventListener("drop",e=>{e.preventDefault();zone.classList.remove("drag");handleFile({target:{files:e.dataTransfer.files}});});
-}
-
-function handleFile(e){
-  const file=e.target.files[0];
-  if(!file) return;
-  if(file.size>500_000){showCreateErr("File too large — max 500KB.");return;}
-  const r=new FileReader();
-  r.onload=ev=>{
-    document.getElementById("c-content").value=ev.target.result;
-    document.getElementById("file-name").textContent="📄 "+file.name;
-    updateCharCount();
-  };
-  r.readAsText(file);
-}
-
-function updateCharCount(){
-  document.getElementById("char-ct").textContent=document.getElementById("c-content").value.length.toLocaleString();
-}
-
-function setStep(id,state){
-  const el=document.getElementById(id);
-  el.className="step "+state;
-  if(state==="done") el.querySelector(".step-icon").textContent="✓";
-  if(state==="active") el.querySelector(".step-icon").textContent=["s1","s2","s3","s4","s5"].indexOf(id)+1;
-}
-
-async function publishAgent(){
-  const name        = document.getElementById("c-name").value.trim();
-  const desc        = document.getElementById("c-desc").value.trim();
-  const personality = document.getElementById("c-personality").value.trim();
-  const content     = document.getElementById("c-content").value.trim();
-
-  document.getElementById("create-err").style.display="none";
-  document.getElementById("success-box").classList.remove("on");
-
-  if(!name)    return showCreateErr("Agent name is required.");
-  if(!content) return showCreateErr("Training content is required.");
-  if(content.length>500_000) return showCreateErr("Content too large (max 500KB).");
-
-  const btn=document.getElementById("pub-btn");
-  btn.disabled=true; btn.textContent="Publishing…";
-  const steps=document.getElementById("pub-steps");
-  steps.classList.add("on");
-  ["s1","s2","s3","s4","s5"].forEach(s=>setStep(s,"idle"));
-  setStep("s1","active");
-
-  try{
-    // Step 1: get next template ID from chain BEFORE minting so we can pre-register
-    const nextTemplateId = Number(await contract.totalTemplates()) + 1;
-
-    // Step 2: encrypt + upload to 0G Storage (server handles encryption)
-    setStep("s1","active"); setStep("s2","active");
-    const trainRes = await fetch("/api/train",{
-      method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({name,description:desc,personality,content,creatorAddress:userAddress,templateId:nextTemplateId}),
-    });
-    const trainData = await trainRes.json();
-    if(!trainRes.ok) throw new Error(trainData.error||"Training upload failed.");
-    setStep("s1","done"); setStep("s2","done"); setStep("s3","active");
-
-    // Step 3: create template on 0G Chain (MetaMask pops here)
-    const tx = await contract.createTemplate(name, desc, personality, trainData.contentHash);
-    const receipt = await tx.wait();
-    setStep("s3","done"); setStep("s4","done"); setStep("s5","done");
-
-    // Reset form
-    ["c-name","c-desc","c-personality","c-content"].forEach(id=>document.getElementById(id).value="");
-    document.getElementById("file-name").textContent="";
-    updateCharCount();
-
-    document.getElementById("success-txt").innerHTML=
-      `<strong>${esc(name)}</strong> is live on the marketplace. ` +
-      `<a href="https://chainscan-galileo.0g.ai/tx/${receipt.hash}" target="_blank">View on chainscan ↗</a>`;
-    document.getElementById("success-box").classList.add("on");
-  }catch(e){
-    steps.classList.remove("on");
-    showCreateErr(e.code===4001?"Transaction rejected in MetaMask.":e.message);
-  } finally {
-    btn.disabled=false; btn.textContent="Train & Publish Agent →";
-  }
-}
-
-function showCreateErr(msg){
-  const e=document.getElementById("create-err");
-  e.textContent=msg; e.style.display="block";
-}
-
-// ── MY LAB ────────────────────────────────────────────────────────────────────
-async function renderLab(){
-  const list  = document.getElementById("lab-list");
-  const empty = document.getElementById("lab-empty");
-  list.innerHTML="";
-
-  const myAgents = allAgents.length ? allAgents.filter(a=>a.creatorAddress?.toLowerCase()===userAddress?.toLowerCase())
-    : (await fetch("/api/agents").then(r=>r.json())).filter(a=>a.creatorAddress?.toLowerCase()===userAddress?.toLowerCase());
-
-  if(myAgents.length===0){ empty.style.display="block"; return; }
-  empty.style.display="none";
-
-  for(const a of myAgents){
-    const row=document.createElement("div");
-    row.className="lab-agent-row";
-    row.innerHTML=`
-      <div class="lab-avatar" style="background:${colorFor(a.templateId)}">${avatarFor(a.templateId)}</div>
-      <div class="lab-info">
-        <div class="lab-name">${esc(a.name)}</div>
-        <div class="lab-meta">${a.totalMinted||0} acquired · 0G Storage · <span style="color:var(--yellow);font-size:10px">${a.contentHash?.slice(0,16)}…</span></div>
-      </div>
-      <div class="lab-actions">
-        <div class="upgrade-btn">+ Upgrade NFT · v2</div>
-        <a href="https://chainscan-galileo.0g.ai/address/${config.contractAddress}" target="_blank" class="btn btn-ghost btn-sm">View ↗</a>
-      </div>`;
-    list.appendChild(row);
-  }
-}
-
-// ── MISC ──────────────────────────────────────────────────────────────────────
-function showHowItWorks(){
-  alert("1. Creators train AI agents on private knowledge and publish them as NFTs on 0G Chain.\n\n2. Training data is AES-256 encrypted and stored on 0G Storage — the raw content is never exposed.\n\n3. Buyers acquire an agent NFT. Ownership is verified on-chain before every inference call.\n\n4. Agent responses are generated by 0G Compute — not a centralized API.\n\nRemove any 0G pillar and the product stops working.");
-}
-
-function appendMsg(histId,cls,text,meta){
-  const h=document.getElementById(histId);
-  const d=document.createElement("div");
-  d.className="msg "+cls; d.textContent=text;
-  if(meta){const m=document.createElement("div");m.className="msg-meta";m.textContent=meta;d.appendChild(m);}
-  h.appendChild(d); h.scrollTop=h.scrollHeight;
-}
-
-function addThinking(histId){
-  const h=document.getElementById(histId);
-  const d=document.createElement("div");
-  d.className="msg-thinking"; d.textContent="Thinking…";
-  h.appendChild(d); h.scrollTop=h.scrollHeight;
-  return d;
-}
-
-function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-
-boot();
+  if (!window.zgstorage) console.error("window.zgstorage missing after script load");
 </script>
+<script type="module" src="/js/vault-app.mjs?v=3"></script>
 </body>
 </html>
