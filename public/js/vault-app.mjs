@@ -1,4 +1,8 @@
-const ethers = window.ethers;
+import * as ethersModule from "https://cdn.jsdelivr.net/npm/ethers@6.13.0/+esm";
+const ethers = ethersModule;
+
+// Make ethers available globally for debugging and for SDKs that might need it
+window.ethers = ethers;
 
 function getStorage() {
   if (!window.zgstorage) {
@@ -144,35 +148,46 @@ async function fetchTrainingData(contentHash, keyHex) {
 
 // ── 0G Compute (browser wallet pays) ──────────────────────────────────────────
 async function ensureComputeAccount(broker) {
-  const isMissingAccount = (err) =>
-    err?.message?.match(/account.*does not.*exist|add-account/i);
-
-  if (typeof broker.inference?.getAccount === "function") {
-    try {
-      await broker.inference.getAccount();
-      return;
-    } catch (err) {
-      if (!isMissingAccount(err)) throw err;
-    }
-  }
-
-  const depositAmount = 0.1;
+  // Skip the getAccount check that's causing "unsupported addressable value"
+  // Instead, try to deposit directly. If account exists, SDK will handle it.
+  
+  console.log("Initializing 0G Compute account...");
+  // 0G Compute requires minimum 3 0G tokens to create a ledger
+  const depositAmount = "3";
+  
   try {
     if (typeof broker.ledger?.depositFund === "function") {
+      console.log("Depositing to account via depositFund with amount:", depositAmount, "0G");
       await broker.ledger.depositFund(depositAmount);
+      console.log("Account initialized successfully");
     } else if (typeof broker.ledger?.addLedger === "function") {
+      console.log("Depositing to account via addLedger with amount:", depositAmount, "0G");
       await broker.ledger.addLedger(depositAmount);
+      console.log("Account initialized successfully");
     } else {
       throw new Error("Unable to initialize 0G Compute account: missing ledger creation method.");
     }
   } catch (err) {
-    if (isMissingAccount(err)) {
+    console.error("Account initialization error:", err.message);
+    
+    // Check for insufficient balance error
+    if (err.message?.match(/insufficient|balance|3 0G|minimum/i)) {
       throw new Error(
-        "0G Compute account registration failed. " +
-        "Make sure your wallet has 0G funds, then try again."
+        "You need at least 3 0G tokens to use 0G Compute. " +
+        "Please get testnet 0G from the faucet (https://faucet.0g.ai), then try again."
       );
     }
-    throw err;
+    
+    // Check for "already exists" - that's fine
+    if (err.message?.match(/already.*exist|ledger.*exist/i)) {
+      console.log("Account already initialized - continuing");
+      return;
+    }
+    
+    // Other errors
+    throw new Error(
+      "0G Compute account setup failed: " + err.message
+    );
   }
 }
 
@@ -186,7 +201,13 @@ async function getBroker() {
       const chat = services.find(s => s.serviceType === "chatbot");
       if (!chat) throw new Error("No chatbot provider on 0G Compute.");
       chatProviderAddress = chat.provider;
-      await broker.inference.acknowledgeProviderSigner(chatProviderAddress);
+      console.log("Chat provider address:", chatProviderAddress, "Type:", typeof chatProviderAddress);
+      try {
+        await broker.inference.acknowledgeProviderSigner(chatProviderAddress);
+      } catch (err) {
+        console.error("acknowledgeProviderSigner error:", err);
+        throw err;
+      }
       return broker;
     })().catch(err => {
       brokerPromise = null;
@@ -197,37 +218,49 @@ async function getBroker() {
 }
 
 async function runInference(personality, trainingContent, question) {
-  const broker = await getBroker();
-  const { endpoint, model } = await broker.inference.getServiceMetadata(chatProviderAddress);
-  if (!endpoint) {
-    throw new Error("0G Compute endpoint unavailable. Please retry or check your network.");
-  }
-  const systemPrompt = personality.trim()
-    ? `${personality.trim()}\n\nYou have been trained on the following knowledge. Answer questions using ONLY this knowledge. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`
-    : `You are a knowledgeable AI agent. Answer questions using ONLY the knowledge base below. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`;
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: question },
-  ];
-  const headers = await broker.inference.getRequestHeaders(chatProviderAddress, question);
-  let res;
   try {
-    res = await fetch(`${endpoint}/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify({ model, messages }),
-    });
+    const broker = await getBroker();
+    console.log("Getting service metadata for provider:", chatProviderAddress);
+    const { endpoint, model } = await broker.inference.getServiceMetadata(chatProviderAddress);
+    if (!endpoint) {
+      throw new Error("0G Compute endpoint unavailable. Please retry or check your network.");
+    }
+    const systemPrompt = personality.trim()
+      ? `${personality.trim()}\n\nYou have been trained on the following knowledge. Answer questions using ONLY this knowledge. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`
+      : `You are a knowledgeable AI agent. Answer questions using ONLY the knowledge base below. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`;
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: question },
+    ];
+    console.log("Getting request headers for provider:", chatProviderAddress);
+    const headers = await broker.inference.getRequestHeaders(chatProviderAddress, question);
+    let res;
+    try {
+      res = await fetch(`${endpoint}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ model, messages }),
+      });
+    } catch (err) {
+      throw new Error(`0G Compute network error: ${err.message}`);
+    }
+    if (!res.ok) throw new Error(`0G Compute error (${res.status}): ${await res.text()}`);
+    const data = await res.json();
+    const answer = data.choices?.[0]?.message?.content ?? "(no answer)";
+    const chatID = res.headers.get("ZG-Res-Key") || data.id;
+    let verified = null;
+    try { 
+      console.log("Processing response for provider:", chatProviderAddress);
+      verified = await broker.inference.processResponse(chatProviderAddress, chatID, answer); 
+    }
+    catch (err) { 
+      console.warn("Response verification failed:", err.message);
+    }
+    return { answer, model, provider: chatProviderAddress, verified };
   } catch (err) {
-    throw new Error(`0G Compute network error: ${err.message}`);
+    console.error("runInference error:", err);
+    throw err;
   }
-  if (!res.ok) throw new Error(`0G Compute error (${res.status}): ${await res.text()}`);
-  const data = await res.json();
-  const answer = data.choices?.[0]?.message?.content ?? "(no answer)";
-  const chatID = res.headers.get("ZG-Res-Key") || data.id;
-  let verified = null;
-  try { verified = await broker.inference.processResponse(chatProviderAddress, chatID, answer); }
-  catch { /* optional */ }
-  return { answer, model, provider: chatProviderAddress, verified };
 }
 
 // ── Contract deploy / resolve ─────────────────────────────────────────────────
@@ -644,7 +677,21 @@ async function sendChat() {
 
   const thinking = addThinking("chat-history");
   try {
-    const [owns] = await contract.ownsAgent(userAddress, currentChatTemplateId);
+    if (!userAddress || !contract) {
+      throw new Error("Wallet not connected. Please reconnect.");
+    }
+    
+    // Validate inputs
+    if (typeof userAddress !== "string" || !ethers.isAddress(userAddress)) {
+      throw new Error(`Invalid user address: ${userAddress}`);
+    }
+    const templateIdNum = Number(currentChatTemplateId);
+    if (!Number.isInteger(templateIdNum) || templateIdNum <= 0) {
+      throw new Error(`Invalid template ID: ${currentChatTemplateId}`);
+    }
+    
+    console.log("Calling ownsAgent with:", { userAddress, templateId: templateIdNum });
+    const [owns] = await contract.ownsAgent(userAddress, templateIdNum);
     if (!owns) throw new Error("You don't own this agent.");
 
     const encKey = await getEncKey(currentChatTemplateId);
@@ -655,7 +702,8 @@ async function sendChat() {
     appendMsg("chat-history", "msg-agent", result.answer, meta);
   } catch (e) {
     thinking.remove();
-    appendMsg("chat-history", "msg-err", e.message);
+    console.error("Chat error:", e.message, "\nStack:", e.stack);
+    appendMsg("chat-history", "msg-err", e.message || "Unknown error occurred");
   } finally {
     sendBtn.disabled = false;
     const h = document.getElementById("chat-history");

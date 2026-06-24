@@ -4,7 +4,6 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Vault — AI Agents on 0G</title>
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
 <style>
 :root{
   --bg:#090c11;--panel:#11141c;--panel2:#0d1016;--line:#1c2030;
@@ -332,6 +331,10 @@ footer a:hover{color:var(--accent)}
           <div class="chat-agent-sub">⬡ 0G Compute · answers from training data only</div>
         </div>
       </div>
+      <div style="background:var(--yellow-dim);border:1px solid #4a3a10;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:var(--text)">
+        <strong style="color:var(--yellow)">⚠ 3 0G required</strong> — First-time users need a minimum of 3 0G tokens to initialize 0G Compute. 
+        <a href="https://faucet.0g.ai" target="_blank" style="color:var(--accent);text-decoration:underline">Get testnet tokens here ↗</a>
+      </div>
       <div class="chat-history" id="chat-history"></div>
       <div class="chat-input-row">
         <textarea id="chat-input" placeholder="Ask your agent anything..." rows="1"
@@ -423,7 +426,6 @@ footer a:hover{color:var(--accent)}
   <a href="https://faucet.0g.ai" target="_blank">Faucet ↗</a>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.0/dist/ethers.umd.min.js"></script>
 <script src="/vendor/0g-storage/zgstorage.umd.min.js" onerror="console.error('Failed to load 0G Storage SDK')"></script>
 <script>
   if (!window.zgstorage) console.error("window.zgstorage missing after script load");
