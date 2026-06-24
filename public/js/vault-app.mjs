@@ -81,10 +81,63 @@ function esc(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const DEFAULT_NETWORK_TIMEOUT_MS = 20000;
+const DEFAULT_NETWORK_RETRY_ATTEMPTS = 3;
+const DEFAULT_NETWORK_RETRY_DELAY_MS = 1000;
+
+function isRetryableStatus(status) {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+function isRetryableError(err) {
+  return err && (err.name === "AbortError" || /network|timeout|failed to fetch|ECONNRESET|EAI_AGAIN|ENOTFOUND|502|503|504/i.test(err.message));
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeout = DEFAULT_NETWORK_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Request timed out after ${timeout}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWithRetry(url, options = {}, attempts = DEFAULT_NETWORK_RETRY_ATTEMPTS) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, options, DEFAULT_NETWORK_TIMEOUT_MS);
+      if (!res.ok && isRetryableStatus(res.status) && attempt < attempts) {
+        const retryAfter = Number(res.headers.get("Retry-After")) || DEFAULT_NETWORK_RETRY_DELAY_MS * attempt;
+        await delay(retryAfter);
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      if (attempt >= attempts || !isRetryableError(err)) {
+        throw err;
+      }
+      await delay(DEFAULT_NETWORK_RETRY_DELAY_MS * attempt);
+    }
+  }
+  throw lastError;
+}
+
 async function fetchJson(url, options) {
   let res;
   try {
-    res = await fetch(url, options);
+    res = await fetchWithRetry(url, options);
   } catch (err) {
     throw new Error(`Network error fetching ${url}: ${err.message}`);
   }
@@ -236,7 +289,7 @@ async function runInference(personality, trainingContent, question) {
     const headers = await broker.inference.getRequestHeaders(chatProviderAddress, question);
     let res;
     try {
-      res = await fetch(`${endpoint}/chat/completions`, {
+      res = await fetchWithRetry(`${endpoint}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ model, messages }),
@@ -244,7 +297,10 @@ async function runInference(personality, trainingContent, question) {
     } catch (err) {
       throw new Error(`0G Compute network error: ${err.message}`);
     }
-    if (!res.ok) throw new Error(`0G Compute error (${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const bodyText = await res.text();
+      throw new Error(`0G Compute error (${res.status}): ${bodyText}`);
+    }
     const data = await res.json();
     const answer = data.choices?.[0]?.message?.content ?? "(no answer)";
     const chatID = res.headers.get("ZG-Res-Key") || data.id;
