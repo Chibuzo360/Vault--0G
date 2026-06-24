@@ -20,7 +20,11 @@ function getIndexer() {
 }
 
 async function loadComputeSdk() {
-  return import("https://esm.sh/@0gfoundation/0g-compute-ts-sdk@0.8.4?bundle&external=ethers");
+  try {
+    return await import("https://esm.sh/@0gfoundation/0g-compute-ts-sdk@0.8.4?bundle");
+  } catch (err) {
+    throw new Error(`Failed to load 0G Compute SDK: ${err.message}`);
+  }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -74,7 +78,12 @@ function esc(s) {
 }
 
 async function fetchJson(url, options) {
-  const res = await fetch(url, options);
+  let res;
+  try {
+    res = await fetch(url, options);
+  } catch (err) {
+    throw new Error(`Network error fetching ${url}: ${err.message}`);
+  }
   const text = await res.text();
   let data;
   try {
@@ -129,25 +138,60 @@ async function fetchTrainingData(contentHash, keyHex) {
     proof: true,
     decryption: { symmetricKey: key },
   });
-  if (err) throw new Error("0G Storage download failed: " + err.message);
+  if (err) throw new Error("0G Storage download failed: " + (err.message || JSON.stringify(err)));
   return new TextDecoder().decode(await blob.arrayBuffer());
 }
 
 // ── 0G Compute (browser wallet pays) ──────────────────────────────────────────
+async function ensureComputeAccount(broker) {
+  const isMissingAccount = (err) =>
+    err?.message?.match(/account.*does not.*exist|add-account/i);
+
+  if (typeof broker.inference?.getAccount === "function") {
+    try {
+      await broker.inference.getAccount();
+      return;
+    } catch (err) {
+      if (!isMissingAccount(err)) throw err;
+    }
+  }
+
+  const depositAmount = 0.1;
+  try {
+    if (typeof broker.ledger?.depositFund === "function") {
+      await broker.ledger.depositFund(depositAmount);
+    } else if (typeof broker.ledger?.addLedger === "function") {
+      await broker.ledger.addLedger(depositAmount);
+    } else {
+      throw new Error("Unable to initialize 0G Compute account: missing ledger creation method.");
+    }
+  } catch (err) {
+    if (isMissingAccount(err)) {
+      throw new Error(
+        "0G Compute account registration failed. " +
+        "Make sure your wallet has 0G funds, then try again."
+      );
+    }
+    throw err;
+  }
+}
+
 async function getBroker() {
   if (!brokerPromise) {
     brokerPromise = (async () => {
       const { createZGComputeNetworkBroker } = await loadComputeSdk();
       const broker = await createZGComputeNetworkBroker(signer);
-      try { await broker.ledger.addLedger(0.1); }
-      catch { /* ledger exists */ }
+      await ensureComputeAccount(broker);
       const services = await broker.inference.listService();
       const chat = services.find(s => s.serviceType === "chatbot");
       if (!chat) throw new Error("No chatbot provider on 0G Compute.");
       chatProviderAddress = chat.provider;
       await broker.inference.acknowledgeProviderSigner(chatProviderAddress);
       return broker;
-    })();
+    })().catch(err => {
+      brokerPromise = null;
+      throw err;
+    });
   }
   return brokerPromise;
 }
@@ -155,6 +199,9 @@ async function getBroker() {
 async function runInference(personality, trainingContent, question) {
   const broker = await getBroker();
   const { endpoint, model } = await broker.inference.getServiceMetadata(chatProviderAddress);
+  if (!endpoint) {
+    throw new Error("0G Compute endpoint unavailable. Please retry or check your network.");
+  }
   const systemPrompt = personality.trim()
     ? `${personality.trim()}\n\nYou have been trained on the following knowledge. Answer questions using ONLY this knowledge. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`
     : `You are a knowledgeable AI agent. Answer questions using ONLY the knowledge base below. If something cannot be answered from it, say so clearly.\n\nKNOWLEDGE BASE:\n${trainingContent}`;
@@ -163,11 +210,16 @@ async function runInference(personality, trainingContent, question) {
     { role: "user", content: question },
   ];
   const headers = await broker.inference.getRequestHeaders(chatProviderAddress, question);
-  const res = await fetch(`${endpoint}/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ model, messages }),
-  });
+  let res;
+  try {
+    res = await fetch(`${endpoint}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify({ model, messages }),
+    });
+  } catch (err) {
+    throw new Error(`0G Compute network error: ${err.message}`);
+  }
   if (!res.ok) throw new Error(`0G Compute error (${res.status}): ${await res.text()}`);
   const data = await res.json();
   const answer = data.choices?.[0]?.message?.content ?? "(no answer)";
@@ -312,14 +364,14 @@ async function boot() {
   } catch (e) {
     setGateStatus("Click Connect Wallet to open MetaMask.");
     console.warn("eth_accounts:", e.message);
-  const personalitySelect = document.getElementById("c-personality-select");
-  if (personalitySelect) personalitySelect.addEventListener("change", applyPersonalityPreset);
   }
 }
 
 function bindUiHandlers() {
   document.getElementById("gate-connect-btn").addEventListener("click", () => connectWallet(false));
   document.getElementById("connect-btn").addEventListener("click", () => connectWallet(false));
+  const personalitySelect = document.getElementById("c-personality-select");
+  if (personalitySelect) personalitySelect.addEventListener("change", applyPersonalityPreset);
 }
 
 async function connectWallet(silent = false) {
@@ -572,7 +624,7 @@ async function getEncKey(templateId) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contractAddress, templateId, wallet: userAddress }),
   });
-  if (!res.ok) throw new Error(data.error || "Could not get decryption key.");
+  if (!res.ok) throw new Error(data.error || "Could not get decryption key. Check that the server is running and the contract address is correct.");
   return data.encKey;
 }
 
