@@ -51,6 +51,18 @@ Server (no private key)
   └─ Store/release decryption keys (ownership-gated)
 ```
 
+## How it works
+
+1. Creator chooses a name, description, and optional personality prompt.
+2. The browser encrypts training content locally with AES-256 and uploads it to 0G Storage.
+3. The browser deploys or reuses the `AgentNFT` contract and calls `createTemplate(name, description, personality, contentHash)`.
+4. After the template is on-chain, the creator registers the decryption key with the server.
+5. Buyers acquire an agent by calling `mintAgent(templateId)`.
+6. When a buyer chats, the browser confirms ownership on-chain and requests the AES key from the server.
+7. The browser decrypts the training data, sends it to 0G Compute, and optionally applies the chosen personality prompt.
+
+> Personality is optional. If blank, the agent uses the default AI response style instead of a custom system prompt.
+
 ## Optional `.env`
 
 ```env

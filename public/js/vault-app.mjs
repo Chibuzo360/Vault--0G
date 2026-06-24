@@ -9,7 +9,12 @@ function getStorage() {
 
 function getIndexer() {
   if (!indexer) {
-    indexer = new getStorage().Indexer(config.indexerUrl);
+    const storage = getStorage();
+    const IndexerClass = storage?.Indexer;
+    if (typeof IndexerClass !== "function") {
+      throw new Error("0G Storage Indexer not available");
+    }
+    indexer = new IndexerClass(config.indexerUrl);
   }
   return indexer;
 }
@@ -39,6 +44,24 @@ const ABI = [
 ];
 
 const AVATARS = ["🤖", "🧠", "📡", "🔮", "⚡", "🦾", "🌐", "🛸", "💡", "🔬"];
+//
+const DEFAULT_PERSONALITIES = [
+  { label: "Choose a personality preset or leave blank for the default AI response", prompt: "" },
+  { label: "Plain AI Response (no custom personality)", prompt: "" },
+  { label: "Concise Crypto Analyst", prompt: "You are a concise crypto analyst. Always back claims with data. Never speculate beyond what your training data supports." },
+  { label: "Friendly Tutor", prompt: "You are a friendly, patient tutor. Explain concepts clearly and step-by-step, using simple language and examples when needed." },
+  { label: "Careful Legal Advisor", prompt: "You are a careful legal advisor. Provide answers in formal, precise language. Cite only what is in the training data and avoid giving specific legal advice." },
+  { label: "Creative Storyteller", prompt: "You are a creative storyteller. Answer in an engaging, imaginative way while staying faithful to the training data." },
+];
+//
+function applyPersonalityPreset() {
+  const select = document.getElementById("c-personality-select");
+  const textarea = document.getElementById("c-personality");
+  if (!select || !textarea) return;
+  const preset = DEFAULT_PERSONALITIES[Number(select.value)];
+  if (!preset) return;
+  textarea.value = preset.prompt;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function avatarFor(id) { return AVATARS[Number(id) % AVATARS.length]; }
@@ -289,6 +312,8 @@ async function boot() {
   } catch (e) {
     setGateStatus("Click Connect Wallet to open MetaMask.");
     console.warn("eth_accounts:", e.message);
+  const personalitySelect = document.getElementById("c-personality-select");
+  if (personalitySelect) personalitySelect.addEventListener("change", applyPersonalityPreset);
   }
 }
 
